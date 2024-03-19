@@ -1,6 +1,6 @@
 # S24_roboticsII
 ROS2 Workspace for S24 RoboticsII
-
+Group members: Max Destil [662032859], Jaia Jalem Foster [662008108], Philip Zhang [661998396]
 ## Fork the repository
 
 Press the `Fork` on the page and fork the repo to your account. This will create a repository with exact same content in your github account.
