@@ -84,29 +84,32 @@ class TrackingNode(Node):
         self.timer = self.create_timer(0.01, self.timer_update)
     
     def detected_obj_pose_callback(self, msg):
-        #self.get_logger().info('Received Detected Object Pose')
-        
-        odom_id = self.get_parameter('world_frame_id').get_parameter_value().string_value
-        center_points = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z])
-        
-        # TODO: Filtering
-        # You can decide to filter the detected object pose here
-        # For example, you can filter the pose based on the distance from the camera
-        # or the height of the object
-        # if np.linalg.norm(center_points) > 3 or center_points[2] > 0.7:
-        #     return
-        
-        try:
-            # Transform the center point from the camera frame to the world frame
-            transform = self.tf_buffer.lookup_transform(odom_id,msg.header.frame_id,rclpy.time.Time(),rclpy.duration.Duration(seconds=0.1))
-            t_R = q2R(np.array([transform.transform.rotation.w,transform.transform.rotation.x,transform.transform.rotation.y,transform.transform.rotation.z]))
-            cp_world = t_R@center_points+np.array([transform.transform.translation.x,transform.transform.translation.y,transform.transform.translation.z])
-        except TransformException as e:
-            self.get_logger().error('Transform Error: {}'.format(e))
-            return
-        
-        # Get the detected object pose in the world frame
-        self.obj_pose = cp_world
+    # Retrieve the world frame ID parameter
+    odom_id = self.get_parameter('world_frame_id').get_parameter_value().string_value
+    # Extract the center point coordinates of the detected object from the message
+    center_points = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z])
+
+    # Filtering based on distance and height
+    # You can adjust or remove these filters based on your application's needs
+    if np.linalg.norm(center_points[:2]) > 3 or center_points[2] > 0.7:
+        # If the object is too far or too high, ignore this detection
+        return
+
+    try:
+        # Look up the transformation from the camera frame to the world frame
+        transform = self.tf_buffer.lookup_transform(odom_id, msg.header.frame_id, rclpy.time.Time(), rclpy.duration.Duration(seconds=0.1))
+        # Convert the quaternion to a rotation matrix
+        t_R = q2R(np.array([transform.transform.rotation.w, transform.transform.rotation.x, transform.transform.rotation.y, transform.transform.rotation.z]))
+        # Apply the rotation and translation to get the object's pose in the world frame
+        cp_world = t_R @ center_points + np.array([transform.transform.translation.x, transform.transform.translation.y, transform.transform.translation.z])
+    except TransformException as e:
+        # If there is an error in transforming the pose, log the error
+        self.get_logger().error('Transform Error: {}'.format(e))
+        return
+    
+    # Update the global object pose with the transformed pose
+    self.obj_pose = cp_world
+
         
     def get_current_object_pose(self):
         
@@ -126,42 +129,61 @@ class TrackingNode(Node):
             return
         
         return object_pose
-    
+   
     def timer_update(self):
-        ################### Write your code here ###################
-        
-        # Now, the robot stops if the object is not detected
-        # But, you may want to think about what to do in this case
-        # and update the command velocity accordingly
-        if self.obj_pose is None:
-            cmd_vel = Twist()
-            cmd_vel.linear.x = 0.0
-            cmd_vel.angular.z = 0.0
-            self.pub_control_cmd.publish(cmd_vel)
-            return
-        
-        # Get the current object pose in the robot base_footprint frame
-        current_object_pose = self.get_current_object_pose()
-        
-        # TODO: get the control velocity command
-        cmd_vel = self.controller()
-        
-        # publish the control command
-        self.pub_control_cmd.publish(cmd_vel)
-        #################################################
-    
-    def controller(self):
-        # Instructions: You can implement your own control algorithm here
-        # feel free to modify the code structure, add more parameters, more input variables for the function, etc.
-        
-        ########### Write your code here ###########
-        
-        # TODO: Update the control velocity command
+    if self.obj_pose is None:
+        # If no object is detected, stop the robot
         cmd_vel = Twist()
-        cmd_vel.linear.x = 0
-        cmd_vel.linear.y = 0
-        cmd_vel.angular.z = 0
-        return cmd_vel
+        cmd_vel.linear.x = 0.0
+        cmd_vel.angular.z = 0.0
+        self.pub_control_cmd.publish(cmd_vel)
+        return
+    
+    # Try to get the current object pose relative to the robot's base_footprint frame
+    current_object_pose = self.get_current_object_pose()
+    
+    if current_object_pose is not None:
+        # Calculate the distance and angle to the target object
+        distance = np.linalg.norm(current_object_pose[:2])  # Consider only X and Y for distance
+        angle_to_target = math.atan2(current_object_pose[1], current_object_pose[0])  # Angle in the XY plane
+        
+        # Control strategy: Calculate velocities based on distance and angle
+        cmd_vel = self.controller(distance, angle_to_target)
+    else:
+        # If we can't get the current pose for some reason, stop the robot as a precaution
+        cmd_vel = Twist()
+        cmd_vel.linear.x = 0.0
+        cmd_vel.angular.z = 0.0
+    
+    # Publish the velocity command
+    self.pub_control_cmd.publish(cmd_vel)
+    #################################################
+    
+    def controller(self, distance, angle):
+    # Proportional control gains
+    Kp_linear = 0.5  # Gain for linear velocity control
+    Kp_angular = 1.0  # Gain for angular velocity control
+
+    # Initialize the Twist message
+    cmd_vel = Twist()
+
+    # Stop 0.3 meters away from the target
+    stop_distance = 0.3
+
+    # Control law for linear velocity: Proportional control to slow down as the robot approaches the target
+    if distance > stop_distance:
+        # Cap the linear speed to a maximum value, for example, 0.5 m/s
+        cmd_vel.linear.x = min(Kp_linear * (distance - stop_distance), 0.5)
+    else:
+        # Stop if within the stopping distance
+        cmd_vel.linear.x = 0.0
+
+    # Control law for angular velocity: Proportional control to align the robot towards the target
+    # The angular velocity is determined by the angle to the target, scaled by a proportional gain
+    cmd_vel.angular.z = Kp_angular * angle
+
+    # Return the computed command velocities
+    return cmd_vel
     
         ############################################
 
