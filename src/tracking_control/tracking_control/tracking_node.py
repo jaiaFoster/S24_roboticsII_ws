@@ -131,59 +131,59 @@ class TrackingNode(Node):
         return object_pose
    
     def timer_update(self):
-    if self.obj_pose is None:
-        # If no object is detected, stop the robot
-        cmd_vel = Twist()
-        cmd_vel.linear.x = 0.0
-        cmd_vel.angular.z = 0.0
-        self.pub_control_cmd.publish(cmd_vel)
-        return
-    
-    # Try to get the current object pose relative to the robot's base_footprint frame
-    current_object_pose = self.get_current_object_pose()
-    
-    if current_object_pose is not None:
-        # Calculate the distance and angle to the target object
-        distance = np.linalg.norm(current_object_pose[:2])  # Consider only X and Y for distance
-        angle_to_target = math.atan2(current_object_pose[1], current_object_pose[0])  # Angle in the XY plane
+        if self.obj_pose is None:
+            # If no object is detected, stop the robot
+            cmd_vel = Twist()
+            cmd_vel.linear.x = 0.0
+            cmd_vel.angular.z = 0.0
+            self.pub_control_cmd.publish(cmd_vel)
+            return
         
-        # Control strategy: Calculate velocities based on distance and angle
-        cmd_vel = self.controller(distance, angle_to_target)
-    else:
-        # If we can't get the current pose for some reason, stop the robot as a precaution
-        cmd_vel = Twist()
-        cmd_vel.linear.x = 0.0
-        cmd_vel.angular.z = 0.0
-    
-    # Publish the velocity command
-    self.pub_control_cmd.publish(cmd_vel)
-    #################################################
+        # Try to get the current object pose relative to the robot's base_footprint frame
+        current_object_pose = self.get_current_object_pose()
+        
+        if current_object_pose is not None:
+            # Calculate the distance and angle to the target object
+            distance = np.linalg.norm(current_object_pose[:2])  # Consider only X and Y for distance
+            angle_to_target = math.atan2(current_object_pose[1], current_object_pose[0])  # Angle in the XY plane
+            
+            # Control strategy: Calculate velocities based on distance and angle
+            cmd_vel = self.controller(distance, angle_to_target)
+        else:
+            # If we can't get the current pose for some reason, stop the robot as a precaution
+            cmd_vel = Twist()
+            cmd_vel.linear.x = 0.0
+            cmd_vel.angular.z = 0.0
+        
+        # Publish the velocity command
+        self.pub_control_cmd.publish(cmd_vel)
+        #################################################
     
     def controller(self, distance, angle):
-    # Proportional control gains
-    Kp_linear = 0.5  # Gain for linear velocity control
-    Kp_angular = 1.0  # Gain for angular velocity control
-
-    # Initialize the Twist message
-    cmd_vel = Twist()
-
-    # Stop 0.3 meters away from the target
-    stop_distance = 0.3
-
-    # Control law for linear velocity: Proportional control to slow down as the robot approaches the target
-    if distance > stop_distance:
-        # Cap the linear speed to a maximum value, for example, 0.5 m/s
-        cmd_vel.linear.x = min(Kp_linear * (distance - stop_distance), 0.5)
-    else:
-        # Stop if within the stopping distance
-        cmd_vel.linear.x = 0.0
-
-    # Control law for angular velocity: Proportional control to align the robot towards the target
-    # The angular velocity is determined by the angle to the target, scaled by a proportional gain
-    cmd_vel.angular.z = Kp_angular * angle
-
-    # Return the computed command velocities
-    return cmd_vel
+        # Proportional control gains
+        Kp_linear = 0.5  # Gain for linear velocity control
+        Kp_angular = 1.0  # Gain for angular velocity control
+    
+        # Initialize the Twist message
+        cmd_vel = Twist()
+    
+        # Stop 0.3 meters away from the target
+        stop_distance = 0.3
+    
+        # Control law for linear velocity: Proportional control to slow down as the robot approaches the target
+        if distance > stop_distance:
+            # Cap the linear speed to a maximum value, for example, 0.5 m/s
+            cmd_vel.linear.x = min(Kp_linear * (distance - stop_distance), 0.5)
+        else:
+            # Stop if within the stopping distance
+            cmd_vel.linear.x = 0.0
+    
+        # Control law for angular velocity: Proportional control to align the robot towards the target
+        # The angular velocity is determined by the angle to the target, scaled by a proportional gain
+        cmd_vel.angular.z = Kp_angular * angle
+    
+        # Return the computed command velocities
+        return cmd_vel
     
         ############################################
 
