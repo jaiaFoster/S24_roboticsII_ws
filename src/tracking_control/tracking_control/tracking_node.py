@@ -84,30 +84,30 @@ class TrackingNode(Node):
         self.timer = self.create_timer(0.01, self.timer_update)
     
     def detected_obj_pose_callback(self, msg):
-    # Retrieve the world frame ID parameter
-    odom_id = self.get_parameter('world_frame_id').get_parameter_value().string_value
-    # Extract the center point coordinates of the detected object from the message
-    center_points = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z])
-
-    # Filtering based on distance and height
-    # You can adjust or remove these filters based on your application's needs
-    if np.linalg.norm(center_points[:2]) > 3 or center_points[2] > 0.7:
-        # If the object is too far or too high, ignore this detection
-        return
-
-    try:
-        # Look up the transformation from the camera frame to the world frame
-        transform = self.tf_buffer.lookup_transform(odom_id, msg.header.frame_id, rclpy.time.Time(), rclpy.duration.Duration(seconds=0.1))
-        # Convert the quaternion to a rotation matrix
-        t_R = q2R(np.array([transform.transform.rotation.w, transform.transform.rotation.x, transform.transform.rotation.y, transform.transform.rotation.z]))
-        # Apply the rotation and translation to get the object's pose in the world frame
-        cp_world = t_R @ center_points + np.array([transform.transform.translation.x, transform.transform.translation.y, transform.transform.translation.z])
-    except TransformException as e:
-        # If there is an error in transforming the pose, log the error
-        self.get_logger().error('Transform Error: {}'.format(e))
-        return
+        # Retrieve the world frame ID parameter
+        odom_id = self.get_parameter('world_frame_id').get_parameter_value().string_value
+        # Extract the center point coordinates of the detected object from the message
+        center_points = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z])
     
-    # Update the global object pose with the transformed pose
+        # Filtering based on distance and height
+        # You can adjust or remove these filters based on your application's needs
+        if np.linalg.norm(center_points[:2]) > 3 or center_points[2] > 0.7:
+            # If the object is too far or too high, ignore this detection
+            return
+    
+        try:
+            # Look up the transformation from the camera frame to the world frame
+            transform = self.tf_buffer.lookup_transform(odom_id, msg.header.frame_id, rclpy.time.Time(), rclpy.duration.Duration(seconds=0.1))
+            # Convert the quaternion to a rotation matrix
+            t_R = q2R(np.array([transform.transform.rotation.w, transform.transform.rotation.x, transform.transform.rotation.y, transform.transform.rotation.z]))
+            # Apply the rotation and translation to get the object's pose in the world frame
+            cp_world = t_R @ center_points + np.array([transform.transform.translation.x, transform.transform.translation.y, transform.transform.translation.z])
+        except TransformException as e:
+            # If there is an error in transforming the pose, log the error
+            self.get_logger().error('Transform Error: {}'.format(e))
+            return
+        
+        # Update the global object pose with the transformed pose
     self.obj_pose = cp_world
 
         
