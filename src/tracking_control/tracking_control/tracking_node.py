@@ -122,7 +122,7 @@ class TrackingNode(Node):
             robot_world_y = transform.transform.translation.y
             robot_world_z = transform.transform.translation.z
             robot_world_R = q2R([transform.transform.rotation.w, transform.transform.rotation.x, transform.transform.rotation.y, transform.transform.rotation.z])
-            object_pose = robot_world_R@self.obj_pose+np.array([robot_world_x,robot_world_y,robot_world_z]) #editted line
+            object_pose = robot_world_R@self.obj_pose+np.array([robot_world_x,robot_world_y,robot_world_z]) 
             
         except TransformException as e:
             self.get_logger().error('Transform error: ' + str(e))
