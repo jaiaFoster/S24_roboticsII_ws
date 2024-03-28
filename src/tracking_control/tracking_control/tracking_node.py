@@ -90,7 +90,6 @@ class TrackingNode(Node):
         center_points = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z])
     
         # Filtering based on distance and height
-        # You can adjust or remove these filters based on your application's needs
         if np.linalg.norm(center_points[:2]) > 3 or center_points[2] > 0.7:
             # If the object is too far or too high, ignore this detection
             return
@@ -139,7 +138,7 @@ class TrackingNode(Node):
             self.pub_control_cmd.publish(cmd_vel)
             return
         
-        # Try to get the current object pose relative to the robot's base_footprint frame
+        # Get the current object pose in the robot base_footprint frame
         current_object_pose = self.get_current_object_pose()
         
         if current_object_pose is not None:
