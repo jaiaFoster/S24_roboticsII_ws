@@ -111,6 +111,7 @@ class TrackingNode(Node):
             cmd_vel = Twist()
             cmd_vel.linear.x = 0.0
             cmd_vel.angular.z = 0.0
+            self.get_logger().error('Failed to obtain current object pose, stopping robot')  # Added debug point for the else statement
 
         self.pub_control_cmd.publish(cmd_vel)
 
@@ -124,10 +125,12 @@ class TrackingNode(Node):
 
         if distance > stop_distance:
             cmd_vel.linear.x = min(Kp_linear * (distance - stop_distance), 0.5)
+            self.get_logger().info(f'Moving towards target: Linear velocity set to {cmd_vel.linear.x}')  # Debug point for movement
         else:
             cmd_vel.linear.x = 0.0
-
+            self.get_logger().info('Within stop distance: Stopping robot')  # Debug point for stopping
         cmd_vel.angular.z = Kp_angular * angle
+        self.get_logger().info(f'Angular velocity set to {cmd_vel.angular.z}')  # Debug point for angular velocity
 
         return cmd_vel
 
