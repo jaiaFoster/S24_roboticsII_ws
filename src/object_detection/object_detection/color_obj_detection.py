@@ -93,57 +93,57 @@ class ColorObjDetectionNode(Node):
         self.get_logger().info('Time synchronizer setup completed')
 
     def camera_callback(self, rgb_msg, points_msg):
-    self.get_logger().info('Received synchronized RGB and Depth messages')
-
-    # Get parameters and prepare images
-    color_low = np.array(self.get_parameter('color_low').value)
-    color_high = np.array(self.get_parameter('color_high').value)
-    object_size_min = self.get_parameter('object_size_min').value
-    rgb_image = self.br.imgmsg_to_cv2(rgb_msg, "bgr8")
-    hsv_image = cv2.cvtColor(rgb_image, cv2.COLOR_BGR2HSV)
-
-    # Process image for color detection
-    color_mask = cv2.inRange(hsv_image, color_low, color_high)
-    contours, _ = cv2.findContours(color_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    self.get_logger().info(f'Found {len(contours)} contours')
-
-    if not contours:
-        self.get_logger().info('No contours found')
-        return
-
-    largest_contour = max(contours, key=cv2.contourArea)
-    x, y, w, h = cv2.boundingRect(largest_contour)
-    if w * h < object_size_min:
-        self.get_logger().info('Ignoring detected object: too small or out of size range')
-        return
-
-    self.get_logger().info(f'Drawing bounding box at {x}, {y}, width {w}, height {h}')
-    cv2.rectangle(rgb_image, (x, y), (x + w, y + h), (0, 255, 0), 2)
-
-    try:
-        pointid = (y * points_msg.row_step) + (x * points_msg.point_step)
-        if pointid >= len(points_msg.data):
-            self.get_logger().error('Computed point index exceeds point cloud data buffer size')
+        self.get_logger().info('Received synchronized RGB and Depth messages')
+    
+        # Get parameters and prepare images
+        color_low = np.array(self.get_parameter('color_low').value)
+        color_high = np.array(self.get_parameter('color_high').value)
+        object_size_min = self.get_parameter('object_size_min').value
+        rgb_image = self.br.imgmsg_to_cv2(rgb_msg, "bgr8")
+        hsv_image = cv2.cvtColor(rgb_image, cv2.COLOR_BGR2HSV)
+    
+        # Process image for color detection
+        color_mask = cv2.inRange(hsv_image, color_low, color_high)
+        contours, _ = cv2.findContours(color_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        self.get_logger().info(f'Found {len(contours)} contours')
+    
+        if not contours:
+            self.get_logger().info('No contours found')
             return
-
-        (X, Y, Z) = struct.unpack_from('fff', points_msg.data, offset=pointid)
-        self.get_logger().info(f'Object position in camera frame: X={X}, Y={Y}, Z={Z}')
-    except struct.error as e:
-        self.get_logger().error('Failed to extract depth data due to incorrect struct unpacking: {}'.format(e))
-        return
-    except Exception as e:
-        self.get_logger().error('Unexpected error occurred while extracting depth data: {}'.format(e))
-        return
-
-    detected_obj_pose = PoseStamped()
-    detected_obj_pose.header.frame_id = 'base_footprint'
-    detected_obj_pose.header.stamp = rgb_msg.header.stamp
-    detected_obj_pose.pose.position.x = X
-    detected_obj_pose.pose.position.y = Y
-    detected_obj_pose.pose.position.z = Z
-    self.pub_detected_obj_pose.publish(detected_obj_pose)
-    self.pub_detected_obj.publish(self.br.cv2_to_imgmsg(rgb_image, encoding='bgr8'))
-    self.get_logger().info('Published detected object and pose')
+    
+        largest_contour = max(contours, key=cv2.contourArea)
+        x, y, w, h = cv2.boundingRect(largest_contour)
+        if w * h < object_size_min:
+            self.get_logger().info('Ignoring detected object: too small or out of size range')
+            return
+    
+        self.get_logger().info(f'Drawing bounding box at {x}, {y}, width {w}, height {h}')
+        cv2.rectangle(rgb_image, (x, y), (x + w, y + h), (0, 255, 0), 2)
+    
+        try:
+            pointid = (y * points_msg.row_step) + (x * points_msg.point_step)
+            if pointid >= len(points_msg.data):
+                self.get_logger().error('Computed point index exceeds point cloud data buffer size')
+                return
+    
+            (X, Y, Z) = struct.unpack_from('fff', points_msg.data, offset=pointid)
+            self.get_logger().info(f'Object position in camera frame: X={X}, Y={Y}, Z={Z}')
+        except struct.error as e:
+            self.get_logger().error('Failed to extract depth data due to incorrect struct unpacking: {}'.format(e))
+            return
+        except Exception as e:
+            self.get_logger().error('Unexpected error occurred while extracting depth data: {}'.format(e))
+            return
+    
+        detected_obj_pose = PoseStamped()
+        detected_obj_pose.header.frame_id = 'base_footprint'
+        detected_obj_pose.header.stamp = rgb_msg.header.stamp
+        detected_obj_pose.pose.position.x = X
+        detected_obj_pose.pose.position.y = Y
+        detected_obj_pose.pose.position.z = Z
+        self.pub_detected_obj_pose.publish(detected_obj_pose)
+        self.pub_detected_obj.publish(self.br.cv2_to_imgmsg(rgb_image, encoding='bgr8'))
+        self.get_logger().info('Published detected object and pose')
 
 def main(args=None):
     rclpy.init(args=args)
