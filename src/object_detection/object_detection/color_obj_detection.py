@@ -57,102 +57,96 @@ def q2R(q):
 class ColorObjDetectionNode(Node):
     def __init__(self):
         super().__init__('color_obj_detection_node')
-        self.get_logger().info('Color Object Detection Node Started')
-        
-        # Declare the parameters for the color detection
-        self.declare_parameter('color_low', [110, 50, 150])
-        self.declare_parameter('color_high', [130, 255, 255])
-        self.declare_parameter('object_size_min', 1000)
-        # Used to convert between ROS and OpenCV images
+        self.get_logger().info('Initializing Color Object Detection Node')
+
+        # Logging parameters
+        color_low = self.declare_parameter('color_low', [110, 50, 150]).get_parameter_value().integer_array_value
+        color_high = self.declare_parameter('color_high', [130, 255, 255]).get_parameter_value().integer_array_value
+        object_size_min = self.declare_parameter('object_size_min', 1000).get_parameter_value().integer_value
+        self.get_logger().info(f'Set color_low to {color_low}, color_high to {color_high}, object_size_min to {object_size_min}')
+
+        # Set up CV bridge
         self.br = CvBridge()
-        
-        # Create a transform listener
+        self.get_logger().info('CV Bridge initialized')
+
+        # Initialize transform listener and buffer
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
-        
-        # Create publisher for the detected object and the bounding box
-        self.pub_detected_obj = self.create_publisher(Image, '/detected_color_object',10)
+        self.get_logger().info('Transform listener and buffer initialized')
+
+        # Setup publisher and subscriber
+        self.setup_pub_sub()
+
+        # Setup time synchronizer
+        self.setup_time_synchronizer()
+
+    def setup_pub_sub(self):
+        self.pub_detected_obj = self.create_publisher(Image, '/detected_color_object', 10)
         self.pub_detected_obj_pose = self.create_publisher(PoseStamped, '/detected_color_object_pose', 10)
-        # Create a subscriber to the RGB and Depth images
         self.sub_rgb = Subscriber(self, Image, '/camera/color/image_raw')
         self.sub_depth = Subscriber(self, PointCloud2, '/camera/depth/points')
-        # Create a time synchronizer
+        self.get_logger().info('Publishers and subscribers initialized')
+
+    def setup_time_synchronizer(self):
         self.ts = ApproximateTimeSynchronizer([self.sub_rgb, self.sub_depth], 10, 0.1)
-        # Register the callback to the time synchronizer
         self.ts.registerCallback(self.camera_callback)
+        self.get_logger().info('Time synchronizer setup completed')
 
     def camera_callback(self, rgb_msg, points_msg):
-        #self.get_logger().info('Received RGB and Depth Messages')
+        self.get_logger().info('Received synchronized RGB and Depth messages')
 
-        # get ROS parameters
-        param_color_low = np.array(self.get_parameter('color_low').value)
-        param_color_high = np.array(self.get_parameter('color_high').value)
-        param_object_size_min = self.get_parameter('object_size_min').value
-        
-        # Convert the ROS image message to a numpy array
-        rgb_image = self.br.imgmsg_to_cv2(rgb_msg,"bgr8")
-        # to hsv
+        # Get parameters and prepare images
+        color_low = np.array(self.get_parameter('color_low').value)
+        color_high = np.array(self.get_parameter('color_high').value)
+        object_size_min = self.get_parameter('object_size_min').value
+        rgb_image = self.br.imgmsg_to_cv2(rgb_msg, "bgr8")
         hsv_image = cv2.cvtColor(rgb_image, cv2.COLOR_BGR2HSV)
-        
-        # color mask
-        color_mask = cv2.inRange(hsv_image, param_color_low, param_color_high)
-        # find largest contour
+
+        # Process image for color detection
+        color_mask = cv2.inRange(hsv_image, color_low, color_high)
         contours, _ = cv2.findContours(color_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if len(contours) > 0:
-            largest_contour = max(contours, key=cv2.contourArea)
-            x, y, w, h = cv2.boundingRect(largest_contour)
-            # threshold by size
-            if w * h < param_object_size_min:
-                return
-            # draw rectangle
-            rgb_image=cv2.rectangle(rgb_image, (x, y), (x + w, y + h), (0, 0, 255), 2)
-            center_x = int(x + w / 2)
-            center_y = int(y + h / 2)
-        else:
-            return
-        # get the location of the detected object using point cloud
-        pointid = (center_y*points_msg.row_step) + (center_x*points_msg.point_step)
-        (X, Y, Z) = struct.unpack_from('fff', points_msg.data, offset=pointid)
-        center_points = np.array([X,Y,Z])
+        self.get_logger().info(f'Found {len(contours)} contours')
 
-        if np.any(np.isnan(center_points)):
+        if not contours:
+            self.get_logger().info('No contours found')
             return
 
-        print("You should be here")
+        # Identify largest contour
+        largest_contour = max(contours, key=cv2.contourArea)
+        x, y, w, h = cv2.boundingRect(largest_contour)
+        if w * h < object_size_min:
+            self.get_logger().info('Ignoring detected object: too small or out of size range')
+            return
 
+        # Log and draw bounding box
+        self.get_logger().info(f'Drawing bounding box at {x}, {y}, width {w}, height {h}')
+        cv2.rectangle(rgb_image, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+        # Attempt to determine object's position in space
         try:
-            # Transform the center point from the camera frame to the world frame
-            transform = self.tf_buffer.lookup_transform('base_footprint',rgb_msg.header.frame_id,rclpy.time.Time(),rclpy.duration.Duration(seconds=0.1))
-            t_R = q2R(np.array([transform.transform.rotation.w,transform.transform.rotation.x,transform.transform.rotation.y,transform.transform.rotation.z]))
-            cp_robot = t_R@center_points+np.array([transform.transform.translation.x,transform.transform.translation.y,transform.transform.translation.z])
-            # Create a pose message for the detected object
-            detected_obj_pose = PoseStamped()
-            detected_obj_pose.header.frame_id = 'base_footprint'
-            detected_obj_pose.header.stamp = rgb_msg.header.stamp
-            detected_obj_pose.pose.position.x = cp_robot[0]
-            detected_obj_pose.pose.position.y = cp_robot[1]
-            detected_obj_pose.pose.position.z = cp_robot[2]
-        except TransformException as e:
-            self.get_logger().error('Transform Error: {}'.format(e))
+            pointid = (y * points_msg.row_step) + (x * points_msg.point_step)
+            (X, Y, Z) = struct.unpack_from('fff', points_msg.data, offset=pointid)
+            self.get_logger().info(f'Object position in camera frame: X={X}, Y={Y}, Z={Z}')
+        except Exception as e:
+            self.get_logger().error('Failed to extract depth data', str(e))
             return
-        
-        # Publish the detected object
+
+        # Publish results
+        detected_obj_pose = PoseStamped()
+        detected_obj_pose.header.frame_id = 'base_footprint'
+        detected_obj_pose.header.stamp = rgb_msg.header.stamp
+        detected_obj_pose.pose.position.x = X
+        detected_obj_pose.pose.position.y = Y
+        detected_obj_pose.pose.position.z = Z
         self.pub_detected_obj_pose.publish(detected_obj_pose)
-        # publush the detected object image
-        detect_img_msg = self.br.cv2_to_imgmsg(rgb_image, encoding='bgr8')
-        detect_img_msg.header = rgb_msg.header
-        self.pub_detected_obj.publish(detect_img_msg)
-        
+        self.pub_detected_obj.publish(self.br.cv2_to_imgmsg(rgb_image, encoding='bgr8'))
+        self.get_logger().info('Published detected object and pose')
+
 def main(args=None):
-    # Initialize the rclpy library
     rclpy.init(args=args)
-    # Create the node
-    color_obj_detection_node = ColorObjDetectionNode()
-    # Spin the node so the callback function is called.
-    rclpy.spin(color_obj_detection_node)
-    # Destroy the node explicitly
-    color_obj_detection_node.destroy_node()
-    # Shutdown the ROS client library for Python
+    node = ColorObjDetectionNode()
+    rclpy.spin(node)
+    node.destroy_node()
     rclpy.shutdown()
 
 if __name__ == '__main__':
