@@ -29,6 +29,6 @@ def generate_launch_description():
     )
     
     return LaunchDescription([
-        obj_detection_node
+        obj_detection_node,
         tracking_control_node
     ])
