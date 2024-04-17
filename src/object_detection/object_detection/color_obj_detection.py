@@ -118,6 +118,8 @@ class ColorObjDetectionNode(Node):
         if np.any(np.isnan(center_points)):
             return
 
+        print("You should be here")
+
         try:
             # Transform the center point from the camera frame to the world frame
             transform = self.tf_buffer.lookup_transform('base_footprint',rgb_msg.header.frame_id,rclpy.time.Time(),rclpy.duration.Duration(seconds=0.1))
