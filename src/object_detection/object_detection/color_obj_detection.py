@@ -143,7 +143,7 @@ class ColorObjDetectionNode(Node):
         detected_obj_pose.pose.position.z = Z
         self.pub_detected_obj_pose.publish(detected_obj_pose)
         self.pub_detected_obj.publish(self.br.cv2_to_imgmsg(rgb_image, encoding='bgr8'))
-        self.get_logger().info('Published detected object and pose')
+        self.get_logger().info('Intruder Detected!')
 
 def main(args=None):
     rclpy.init(args=args)
